@@ -67,6 +67,11 @@ contract StrataxOracle {
 
         AggregatorV3Interface priceFeed = AggregatorV3Interface(priceFeedAddress);
 
+        // hack 007 no updatedAt/heartbeat check; stale prices accepted
+        // hack 008 no answeredInRound >= roundId; incomplete round data possible
+        // hack 009 no sequencer uptime check for L2 deployments
+        // hack 010 no try/catch; oracle revert causes full tx revert
+        // hack 011 no flash crash bounds check
         (, int256 answer,,,) = priceFeed.latestRoundData();
         require(answer > 0, "Invalid price from oracle");
 

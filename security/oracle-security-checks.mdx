@@ -1,0 +1,103 @@
+# Oracle
+
+
+## Is the Oracle using deprecated Chainlink functions?
+### Description
+Usage of deprecated Chainlink functions like latestRoundData() might return stale or incorrect data, affecting the integrity of smart contracts.
+### Remediation
+Replace deprecated functions with the current recommended methods to ensure accurate data retrieval from oracles.
+
+
+
+## Is the returned price validated to be non-zero?
+### Description
+Price feed might return zero and this must be handled as invalid.
+### Remediation
+Ensure the returned price is not zero.
+
+
+## Is the price update time validated?
+### Description
+Price feeds might not be supported in the future. To ensure accurate price usage, it's vital to regularly check the last update timestamp against a predefined delay.
+### Remediation
+Implement a mechanism to check the heartbeat of the price feed and compare it against a predefined maximum delay (`MAX_DELAY`). Adjust the `MAX_DELAY` variable based on the observed heartbeat.
+
+
+## Is there a validation to check if the rollup sequencer is running?
+### Description
+The rollup sequencer can become offline, which can lead to potential vulnerabilities due to stale price.
+### Remediation
+Utilize the sequencer uptime feed to confirm the sequencers are up.
+
+
+
+## Is the Oracle's TWAP period appropriately set?
+### Description
+An inadequately set TWAP (Time-Weighted Average Price) period could be exploited to manipulate prices.
+### Remediation
+Adjust the TWAP period to a duration that mitigates the risk of manipulation while providing timely price updates.
+
+
+
+## Is the desired price feed pair supported across all deployed chains?
+### Description
+In multi-chain deployments, it's crucial to ensure the desired price feed pair is available and consistent across all chains.
+### Remediation
+Review the supported price feed pairs on all chains and ensure they are consistent.
+
+
+## Is the heartbeat of the price feed suitable for the use case?
+### Description
+A price feed heartbeat that's too slow might not be suitable for some use cases.
+### Remediation
+Assess the requirements of the use case and ensure the price feed heartbeat aligns with them.
+
+
+## Are there any inconsistencies with decimal precision when using different price feeds?
+### Description
+Different price feeds might have varying decimal precisions, which can lead to inaccuracies.
+### Remediation
+Ensure that the contract handles potential variations in decimal precision across different price feeds.
+
+
+## Is the price feed address hard-coded?
+### Description
+Hard-coded price feed addresses can be problematic, especially if they become deprecated or if they're not accurate in the first place.
+### Remediation
+Review and verify the hardcoded price feed addresses. Consider mechanisms to update the address if required in the future.
+
+
+## What happens if oracle price updates are front-run?
+### Description
+Oracle price updates can be front-run and cause various problems.
+### Remediation
+Ensure the protocol is not affected in the case where oracle price updates are front-run.
+
+
+
+## How does the system handle potential oracle reverts?
+### Description
+Unanticipated oracle reverts can lead to Denial-Of-Service.
+### Remediation
+Implement try/catch blocks around oracle calls and have alternative strategies ready.
+
+
+## Are the price feeds appropriate for the underlying assets?
+### Description
+Using an ETH price feed for stETH or a BTC price feed for WBTC can introduce risks associated with the underlying assets deviating from their pegs.
+### Remediation
+Ensure that the price feeds accurately represent the underlying assets to address potential depeg risks.
+
+
+## Is the contract vulnerable to oracle manipulation, especially using spot prices from AMMs?
+### Description
+Reliance on AMM spot prices as oracles can be manipulated via flashloan.
+### Remediation
+Choose reliable and tamper-resistant oracle sources. Avoid using spot prices from AMMs directly without additional checks.
+
+
+## How does the system address potential inaccuracies during flash crashes?
+### Description
+During flash crashes, oracles might return inaccurate prices.
+### Remediation
+Implement checks to ensure that the price returned by the oracle lies within an expected range to guard against potential flash crash vulnerabilities.

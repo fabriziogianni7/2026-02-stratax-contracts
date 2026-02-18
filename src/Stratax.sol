@@ -208,7 +208,7 @@ contract Stratax is Initializable {
     ) external returns (bool) {
         require(msg.sender == address(aavePool), "Caller must be Aave Pool");
         require(_initiator == address(this), "Initiator must be this contract");
-
+        // hack 001 add validation for _amount, _premium, _params
         // Decode operation type
         OperationType opType = abi.decode(_params, (OperationType));
 
@@ -392,6 +392,7 @@ contract Stratax is Initializable {
         // If collateral token price is zero, fetch it from the oracle
         if (details.collateralTokenPrice == 0) {
             require(strataxOracle != address(0), "Oracle not set");
+            // hack 010 no try/catch; oracle revert DoS
             details.collateralTokenPrice = IStrataxOracle(strataxOracle).getPrice(details.collateralToken);
         }
         require(details.collateralTokenPrice > 0, "Collateral token price must be > 0");
@@ -399,6 +400,7 @@ contract Stratax is Initializable {
         // If borrow token price is zero, fetch it from the oracle
         if (details.borrowTokenPrice == 0) {
             require(strataxOracle != address(0), "Oracle not set");
+            // hack 010 no try/catch; oracle revert DoS
             details.borrowTokenPrice = IStrataxOracle(strataxOracle).getPrice(details.borrowToken);
         }
         require(details.borrowTokenPrice > 0, "Borrow token price must be > 0");
@@ -458,6 +460,7 @@ contract Stratax is Initializable {
         // Get the address of the debt token
         (,, address debtToken) = aaveDataProvider.getReserveTokensAddresses(_borrowToken);
         debtAmount = IERC20(debtToken).balanceOf(address(this));
+        // hack 010 no try/catch; oracle revert DoS
         uint256 debtTokenPrice = IStrataxOracle(strataxOracle).getPrice(_borrowToken);
         uint256 collateralTokenPrice = IStrataxOracle(strataxOracle).getPrice(_collateralToken);
 
@@ -492,10 +495,12 @@ contract Stratax is Initializable {
 
         // Step 1: Supply flash loan amount + user's extra amount to Aave as collateral
         uint256 totalCollateral = _amount + flashParams.collateralAmount;
-        IERC20(_asset).approve(address(aavePool), totalCollateral);
-        aavePool.supply(_asset, totalCollateral, address(this), 0);
 
-        // Store initial balance to verify all borrowed tokens are used in swap
+        // hack 002 use SafeERC20.forceApprove
+        IERC20(_asset).approve(address(aavePool), totalCollateral);
+        aavePool.supply(_asset, totalCollateral, address(this), 0); // note referralCode 0 hardcoded
+
+        // hack 003 when collateral == borrowToken, prevBalance includes flash loan + collateral; check fails
         uint256 prevBorrowTokenBalance = IERC20(flashParams.borrowToken).balanceOf(address(this));
         // Step 2: Borrow against the supplied collateral
         aavePool.borrow(
@@ -507,13 +512,14 @@ contract Stratax is Initializable {
         );
 
         // Step 3: Swap borrowed tokens via 1inch to get back the collateral token
+        // hack 002 use SafeERC20.forceApprove
         IERC20(flashParams.borrowToken).approve(address(oneInchRouter), flashParams.borrowAmount);
 
-        // Execute swap via 1inch
+        // Execute swap via 1inch (borrowToken -> collateral). hack 005 2nd arg should be _asset (swap target)
         uint256 returnAmount =
             _call1InchSwap(flashParams.oneInchSwapData, flashParams.borrowToken, flashParams.minReturnAmount);
 
-        // Ensure all borrowed tokens were used in the swap
+        // hack 003 same-token flow: afterSwapBalance > prevBalance; require reverts valid ops
         uint256 afterSwapBorrowTokenbalance = IERC20(flashParams.borrowToken).balanceOf(address(this));
         require(afterSwapBorrowTokenbalance == prevBorrowTokenBalance, "Borrow token left in contract");
 
@@ -527,10 +533,12 @@ contract Stratax is Initializable {
 
         // Supply any leftover tokens back to Aave to improve position health
         if (returnAmount - totalDebt > 0) {
+            // hack 002 use SafeERC20.forceApprove
             IERC20(_asset).approve(address(aavePool), returnAmount - totalDebt);
             aavePool.supply(_asset, returnAmount - totalDebt, address(this), 0);
         }
 
+        // hack 002 use SafeERC20.forceApprove
         IERC20(_asset).approve(address(aavePool), totalDebt);
 
         emit LeveragePositionCreated(
@@ -556,22 +564,25 @@ contract Stratax is Initializable {
         (, address user, UnwindParams memory unwindParams) = abi.decode(_params, (OperationType, address, UnwindParams));
 
         // Step 1: Repay the Aave debt using flash loaned tokens
+        // hack 002 use SafeERC20.forceApprove
         IERC20(_asset).approve(address(aavePool), _amount);
         aavePool.repay(_asset, _amount, 2, address(this));
 
         // Step 2: Calculate and withdraw only the collateral that backed the repaid debt
         uint256 withdrawnAmount;
         {
-            // Get LTV from Aave for the collateral token
+            // hack 006 fetches liqThreshold (3rd) but formula needs LTV (2nd); use (, uint256 ltv,,,,,,,,)
             (,, uint256 liqThreshold,,,,,,,) =
                 aaveDataProvider.getReserveConfigurationData(unwindParams.collateralToken);
 
             // Get prices and decimals
+            // hack 010 no try/catch; oracle revert DoS (critical: inside flash loan callback)
             uint256 debtTokenPrice = IStrataxOracle(strataxOracle).getPrice(_asset);
             uint256 collateralTokenPrice = IStrataxOracle(strataxOracle).getPrice(unwindParams.collateralToken);
-            require(debtTokenPrice > 0 && collateralTokenPrice > 0, "Invalid prices");
+            require(debtTokenPrice > 0 && collateralTokenPrice > 0, "Invalid prices"); //note this is redundant IMO
 
             // Calculate collateral to withdraw: (debtAmount * debtPrice * collateralDec * LTV_PRECISION) / (collateralPrice * debtDec * ltv)
+            // hack 006 liqThreshold > LTV → withdraws less collateral than needed; should use ltv
             uint256 collateralToWithdraw = (
                 _amount * debtTokenPrice * (10 ** IERC20(unwindParams.collateralToken).decimals()) * LTV_PRECISION
             ) / (collateralTokenPrice * (10 ** IERC20(_asset).decimals()) * liqThreshold);
@@ -580,6 +591,7 @@ contract Stratax is Initializable {
         }
 
         // Step 3: Swap collateral to debt token to repay flash loan
+        // hack 002 use SafeERC20.forceApprove
         IERC20(unwindParams.collateralToken).approve(address(oneInchRouter), withdrawnAmount);
         uint256 returnAmount = _call1InchSwap(unwindParams.oneInchSwapData, _asset, unwindParams.minReturnAmount);
 
@@ -590,10 +602,12 @@ contract Stratax is Initializable {
         // Supply any leftover tokens back to Aave
         // Note: There might be other positions open, so unwinding one position will increase the health factor
         if (returnAmount - totalDebt > 0) {
+            // hack 002 use SafeERC20.forceApprove
             IERC20(_asset).approve(address(aavePool), returnAmount - totalDebt);
             aavePool.supply(_asset, returnAmount - totalDebt, address(this), 0);
         }
 
+        // hack 002 use SafeERC20.forceApprove
         IERC20(_asset).approve(address(aavePool), totalDebt);
 
         emit PositionUnwound(user, unwindParams.collateralToken, _asset, _amount, withdrawnAmount);
@@ -614,6 +628,7 @@ contract Stratax is Initializable {
         returns (uint256 returnAmount)
     {
         // Execute the 1inch swap using low-level call with the calldata from the API
+        // hack 004 call sends 0 wei; native ETH swaps need msg.value; contract has no receive()
         (bool success, bytes memory result) = address(oneInchRouter).call(_swapParams);
         require(success, "1inch swap failed");
 
@@ -621,7 +636,7 @@ contract Stratax is Initializable {
         if (result.length > 0) {
             (returnAmount,) = abi.decode(result, (uint256, uint256));
         } else {
-            // If no return data, check balance
+            // hack 004 IERC20(_asset) reverts when _asset is native ETH sentinel
             returnAmount = IERC20(_asset).balanceOf(address(this));
         }
         // Sanity check

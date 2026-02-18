@@ -1,0 +1,311 @@
+# Agent Security Checks for Smart Contract Interaction
+
+This checklist focuses on risks introduced when autonomous or semi-autonomous agents can call contracts, sign transactions, trigger workflows, and react to external data. It is intentionally general so it can be applied to bots, AI agents, keepers, strategy agents, and offchain automation systems.
+
+## Agent Identity and Authority
+
+**Question** Is each agent identity explicit and unique onchain?
+
+**Description**
+If multiple bots share the same signer, you cannot separate accountability, rotate one compromised agent safely, or enforce per-agent limits.
+
+**Remediation**
+Use unique signing keys or smart-account identities per agent role and environment. Maintain an ownership map and rotation playbook.
+
+**Question** Is the agent allowed to call only the minimal required contract functions?
+
+**Description**
+Overly broad permissions increase blast radius when an agent is compromised, misconfigured, or manipulated.
+
+**Remediation**
+Apply least privilege: dedicated roles, allowlists, and per-function permissions. Split duties across specialized agents.
+
+**Question** Are there hard limits on value, frequency, and scope of agent actions?
+
+**Description**
+Even valid logic can fail under bad inputs. Without guardrails, an agent can repeatedly execute costly or harmful actions.
+
+**Remediation**
+Enforce onchain caps (max amount, max slippage, max calls per window, per-market limits) and fail closed on limit breaches.
+
+**Question** Can an operator or guardian immediately stop agent actions?
+
+**Description**
+Incidents require rapid containment. Without pause/kill mechanisms, damage can continue while humans investigate.
+
+**Remediation**
+Implement emergency pause/circuit breaker controls with clear authority, low latency execution paths, and tested runbooks.
+
+## Signing, Key Management, and Execution Safety
+
+**Question** Are agent keys isolated from runtime logic and prompt context?
+
+**Description**
+If keys or signing rights are directly exposed to the same process that consumes untrusted data, prompt/output manipulation can trigger unauthorized signing.
+
+**Remediation**
+Use hardened signing infrastructure (HSM/MPC/remote signer), strict policy engines, and one-way approval interfaces.
+
+**Question** Are transaction intents validated before signing?
+
+**Description**
+Agents can be tricked into signing unexpected calldata, target addresses, chain IDs, or nonce patterns.
+
+**Remediation**
+Pre-sign checks should validate contract address, selector, parameter ranges, chain ID, nonce policy, gas policy, and expiry/deadline.
+
+**Question** Is there protection against replay and cross-domain confusion?
+
+**Description**
+Messages valid on one network or context may be reused elsewhere if domain separation is weak.
+
+**Remediation**
+Use domain separators, chain-specific nonces, deadlines, and explicit network binding for every signed payload.
+
+**Question** Are approvals bounded and revocable?
+
+**Description**
+Long-lived infinite approvals let compromised agents drain funds long after the original action.
+
+**Remediation**
+Prefer exact/short-lived approvals, Permit with tight deadlines, spender allowlists, and automated approval revocation routines.
+
+## Prompt, Tool, and Input Integrity
+
+**Question** Can untrusted content influence the agent's transaction decision path?
+
+**Description**
+Prompt injection can alter instructions, bypass safeguards, or coerce the agent into privileged actions.
+
+**Remediation**
+Treat all external text/content as untrusted. Use strict policy layers outside the model, deterministic validators, and deny-by-default execution gates.
+
+**Question** Are tool outputs authenticated and sanity-checked?
+
+**Description**
+Agents often depend on APIs, indexers, or simulation tools. Wrong or tampered outputs can trigger invalid execution.
+
+**Remediation**
+Validate source authenticity, cross-check across independent providers, and reject out-of-range values.
+
+**Question** Is there a strong schema for action generation?
+
+**Description**
+Free-form outputs are ambiguous and fragile. Ambiguity can map to dangerous calldata.
+
+**Remediation**
+Use strict typed schemas for action plans, explicit enums for intents, and deterministic translation from intent to calldata.
+
+**Question** Can the agent execute arbitrary tools or commands?
+
+**Description**
+Excessive tool access can become an escalation path from prompt manipulation to key compromise or unauthorized blockchain actions.
+
+**Remediation**
+Restrict tools to least privilege, isolate execution environments, and require explicit policy approval for sensitive actions.
+
+## Transaction Lifecycle and Mempool Risks
+
+**Question** Are transactions simulated under realistic state and slippage assumptions?
+
+**Description**
+A passing local simulation may fail or become harmful under state changes between planning and inclusion.
+
+**Remediation**
+Simulate close to send time, include conservative buffers, and invalidate stale plans using short deadlines.
+
+**Question** Is the system hardened against frontrunning and sandwiching?
+
+**Description**
+Predictable agent behavior can be exploited in the public mempool, especially for DEX interactions.
+
+**Remediation**
+Use private relays where appropriate, conservative slippage limits, randomized timing/size policies, and anti-MEV design patterns.
+
+**Question** Is replacement/cancellation logic safe and bounded?
+
+**Description**
+Faulty nonce or gas bump logic can cause stuck queues, runaway fees, or duplicate intent execution.
+
+**Remediation**
+Implement robust nonce management, bounded gas escalators, cancellation paths, and idempotent execution checks.
+
+**Question** Can delayed execution invalidate economic assumptions?
+
+**Description**
+Agents may act on stale prices, stale liquidity, or stale oracle states due to inclusion latency.
+
+**Remediation**
+Use freshness checks, strict deadline fields, and state revalidation right before signing.
+
+## Economic and Strategy Risks
+
+**Question** Are incentives aligned so agents cannot profit from harmful behavior?
+
+**Description**
+Agents or operators may optimize for local metrics (fees, activity) that conflict with protocol/user safety.
+
+**Remediation**
+Design reward functions with safety constraints, penalties for harmful actions, and independent monitoring.
+
+**Question** Are there safeguards against runaway loops and reflexive behavior?
+
+**Description**
+Feedback loops between agents, markets, and triggers can amplify volatility and losses.
+
+**Remediation**
+Add cooldowns, minimum confidence thresholds, hysteresis, and explicit stop conditions on repeated losses.
+
+**Question** Are correlated failures across multiple agents considered?
+
+**Description**
+Many agents often share data sources, libraries, and assumptions, causing synchronized bad actions.
+
+**Remediation**
+Diversify data providers, decision logic, and deployment cohorts. Use staged rollouts and canaries.
+
+**Question** Is user fund handling separated from strategy execution logic?
+
+**Description**
+Mixing custody and strategy authority in one agent increases impact of compromise.
+
+**Remediation**
+Segregate roles and assets, enforce vault-level policies, and require extra approvals for custody-sensitive actions.
+
+## Oracle, Data, and Time Assumptions
+
+**Question** Are oracle values checked for staleness, bounds, and manipulation windows?
+
+**Description**
+Agents acting on stale or manipulated prices can execute systematically bad trades or liquidations.
+
+**Remediation**
+Validate heartbeat/deviation, compare against reference feeds, and halt when confidence drops.
+
+**Question** Are unit conversions and token decimals consistently validated?
+
+**Description**
+Decimal mismatches are common in automated systems and can result in 10x to 1,000,000x sizing mistakes.
+
+**Remediation**
+Normalize all units centrally, test edge-token decimals, and add strict range checks before sending.
+
+**Question** Are time-based assumptions robust to timestamp variance and delays?
+
+**Description**
+Agents relying on narrow time windows can fail unpredictably with block-time variance or network congestion.
+
+**Remediation**
+Use conservative validity windows, retry policies with revalidation, and explicit timeout handling.
+
+## Contract Integration and Upgrade Risks
+
+**Question** Does the agent verify contract versions and ABIs before interacting?
+
+**Description**
+Proxy upgrades or integration changes can silently break assumptions and produce unsafe calls.
+
+**Remediation**
+Pin known ABI/interface hashes, monitor upgrade events, and require manual or policy approval for new versions.
+
+**Question** Are external protocol dependencies treated as untrusted?
+
+**Description**
+A dependent protocol can change behavior, pause, or be exploited, cascading risk into agent actions.
+
+**Remediation**
+Maintain dependency risk tiers, dynamic denylists, and fallback modes that preserve funds.
+
+**Question** Are reentrancy and callback side-effects considered in multi-step agent flows?
+
+**Description**
+Agents that chain actions across contracts may assume state transitions that do not hold under callbacks.
+
+**Remediation**
+Use CEI patterns onchain, split critical sequences, and verify post-conditions after each external interaction.
+
+## Observability, Auditing, and Incident Response
+
+**Question** Is every agent decision and transaction traceable end-to-end?
+
+**Description**
+Without structured telemetry, incident triage and accountability are slow and incomplete.
+
+**Remediation**
+Log decision inputs, policy checks, simulation outputs, calldata, tx hash, and post-trade outcomes with immutable timestamps.
+
+**Question** Are anomaly detectors in place for behavior drift?
+
+**Description**
+Agents may degrade gradually due to market regime changes or model/tool drift.
+
+**Remediation**
+Monitor action distribution, fail rates, slippage, pnl, and policy violations. Alert on deviation from baseline.
+
+**Question** Is there a tested incident response plan specific to autonomous execution?
+
+**Description**
+Generic IR plans often miss agent-specific steps like key isolation, policy freeze, and queue draining.
+
+**Remediation**
+Run regular tabletop and live-fire drills for pause, key rotation, replay analysis, and controlled restart.
+
+## Governance, Human Oversight, and Safe Automation Boundaries
+
+**Question** Are high-impact actions gated by human or multi-party approval?
+
+**Description**
+Fully autonomous execution on critical paths can create catastrophic one-shot failure modes.
+
+**Remediation**
+Require step-up approvals for high-value/high-risk actions, parameter changes, and new integration activation.
+
+**Question** Is there a clear boundary between advisory and autonomous agent modes?
+
+**Description**
+Teams often blur "recommendation" and "execution" workflows, accidentally granting execution rights too early.
+
+**Remediation**
+Use explicit operation modes (`observe`, `recommend`, `execute`) with separate credentials and rollout criteria.
+
+**Question** Are policy changes versioned, reviewed, and reversible?
+
+**Description**
+Rapid policy edits under pressure can introduce hidden vulnerabilities.
+
+**Remediation**
+Apply code review, change windows, approvals, version pinning, and fast rollback for policy bundles.
+
+## Validation and Testing Checklist
+
+**Question** Are there adversarial tests for prompt injection and malicious tool outputs?
+
+**Description**
+Happy-path tests miss the dominant risk class for agentic systems: adversarial input manipulation.
+
+**Remediation**
+Build red-team suites with injected instructions, corrupted API responses, stale data, and malformed schemas.
+
+**Question** Are chaos tests run for degraded infra conditions?
+
+**Description**
+Agents fail differently under RPC lag, partial outages, mempool turbulence, and fork/reorg events.
+
+**Remediation**
+Run chaos tests for provider outages, delayed blocks, high gas spikes, and chain reorganizations.
+
+**Question** Are economic stress tests performed for edge markets?
+
+**Description**
+Low liquidity and volatile regimes can invalidate otherwise safe strategies.
+
+**Remediation**
+Backtest and simulate crisis scenarios with worst-case slippage, liquidity gaps, and correlated shocks.
+
+**Question** Is there a deployment safety ladder for new agent capabilities?
+
+**Description**
+Shipping directly to full production exposure increases probability of severe loss.
+
+**Remediation**
+Use progressive exposure: dry-run -> shadow mode -> capped canary -> staged rollout -> full enablement.

@@ -23,7 +23,7 @@ contract DeployStrataxBeacon is Script {
         address usdc = vm.envAddress("USDC");
         address strataxOracle = vm.envAddress("STRATAX_ORACLE");
 
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast(deployerPrivateKey); //note never use the plain text private key, use a keystore
 
         // 1. Deploy the implementation contract
         Stratax implementation = new Stratax();
